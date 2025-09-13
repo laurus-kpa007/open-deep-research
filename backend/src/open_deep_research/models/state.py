@@ -97,7 +97,7 @@ def create_research_state(
         current_thoughts="",
         draft_content="",
         max_researchers=max_researchers,
-        max_iterations=6
+        max_iterations=2
     )
 
 def update_research_progress(state: ResearchState, stage: str, progress: int) -> None:
