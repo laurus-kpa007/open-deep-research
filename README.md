@@ -18,14 +18,16 @@ A web-based research tool powered by local LLM via Ollama, supporting Korean and
 ```
 Frontend (Next.js) ↔ Backend (FastAPI) ↔ Ollama (Gemma 3:12B)
                             ↓
-                    PostgreSQL Database
+                    SQLite Database
 ```
 
 - **Frontend**: Next.js 14, TypeScript, Tailwind CSS
 - **Backend**: FastAPI, LangGraph, Pydantic
 - **LLM**: Ollama with Gemma 3:12B
-- **Database**: PostgreSQL
+- **Database**: SQLite (PostgreSQL ready)
 - **Search**: Tavily API
+
+📊 **[시스템 구성도 보기 / View System Architecture](./ARCHITECTURE.md)**
 
 ## 🚀 빠른 시작 / Quick Start
 
