@@ -60,6 +60,12 @@ class ResearchState(TypedDict):
     # Progress tracking
     current_stage: str
     progress: int
+    detailed_progress: List[Dict[str, Any]]  # Detailed progress updates
+    
+    # Live content tracking
+    current_search_results: List[Dict[str, Any]]  # Real-time search results
+    current_thoughts: str  # LLM's current thinking process
+    draft_content: str  # Draft content being generated
     
     # Configuration
     max_researchers: int
@@ -86,6 +92,10 @@ def create_research_state(
         last_updated=datetime.utcnow(),
         current_stage="initializing",
         progress=0,
+        detailed_progress=[],
+        current_search_results=[],
+        current_thoughts="",
+        draft_content="",
         max_researchers=max_researchers,
         max_iterations=6
     )
@@ -95,6 +105,16 @@ def update_research_progress(state: ResearchState, stage: str, progress: int) ->
     state["current_stage"] = stage
     state["progress"] = progress
     state["last_updated"] = datetime.utcnow()
+    
+    # Initialize fields if they don't exist
+    if "detailed_progress" not in state:
+        state["detailed_progress"] = []
+    if "current_search_results" not in state:
+        state["current_search_results"] = []
+    if "current_thoughts" not in state:
+        state["current_thoughts"] = ""
+    if "draft_content" not in state:
+        state["draft_content"] = ""
 
 class ResearchRequest(BaseModel):
     """Request model for starting research."""
@@ -118,3 +138,22 @@ class ResearchProgress(BaseModel):
     timestamp: datetime
     data: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+
+class DetailedProgress(BaseModel):
+    """Detailed progress information for real-time updates."""
+    type: Literal[
+        "thinking",          # LLM is processing/thinking
+        "searching",         # Performing web search
+        "analyzing",         # Analyzing search results
+        "writing",           # Writing content
+        "synthesizing",      # Combining information
+        "validating",        # Fact-checking
+        "formatting"         # Final formatting
+    ]
+    message: str
+    details: Optional[str] = None
+    current_item: Optional[int] = None
+    total_items: Optional[int] = None
+    preview: Optional[str] = None  # Live preview of content being generated
+    sources_found: Optional[int] = None
+    confidence: Optional[float] = None  # 0.0 to 1.0

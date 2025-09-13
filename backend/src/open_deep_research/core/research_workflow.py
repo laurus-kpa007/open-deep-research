@@ -9,7 +9,7 @@ from langgraph.graph.message import add_messages
 
 from ..models.state import (
     ResearchState, ConductResearch, Summary, ClarifyWithUser,
-    LanguageCode, update_research_progress
+    LanguageCode, update_research_progress, DetailedProgress
 )
 from ..prompts.multilingual_prompts import MultilingualPrompts
 from ..core.ollama_client import OllamaClient
@@ -68,6 +68,14 @@ class ResearchWorkflow:
         try:
             update_research_progress(state, "clarifying", 10)
             
+            # Send detailed progress if callback available
+            if self.progress_callback:
+                await self._send_detailed_progress(
+                    state, "thinking", 
+                    "연구 목표를 분석하고 있습니다...",
+                    "사용자의 질문을 이해하고 연구 방향을 설정하는 중입니다."
+                )
+            
             # Send progress update if callback available
             if self.progress_callback:
                 await self.progress_callback("clarifying", 10)
@@ -115,6 +123,14 @@ class ResearchWorkflow:
         """Generate comprehensive research brief."""
         try:
             update_research_progress(state, "briefing", 30)
+            
+            # Send detailed progress if callback available
+            if self.progress_callback:
+                await self._send_detailed_progress(
+                    state, "writing",
+                    "연구 계획서를 작성하고 있습니다...",
+                    "연구 범위, 방법론, 예상 결과를 정의하는 중입니다."
+                )
             
             # Send progress update if callback available
             if self.progress_callback:
@@ -242,11 +258,36 @@ class ResearchWorkflow:
             if self.progress_callback:
                 await self.progress_callback("researching", int(progress))
             
+            # Send search start notification if callback available
+            search_query = current_task["research_question"] if isinstance(current_task, dict) else current_task.research_question
+            if self.progress_callback:
+                await self._send_detailed_progress(
+                    state, "searching",
+                    f"웹 검색 중: {search_query[:50]}...",
+                    f"Task {completed_count + 1}/{len(state['supervisor_requests'])}",
+                    current_item=completed_count + 1,
+                    total_items=len(state['supervisor_requests'])
+                )
+            
             # Conduct web search
             search_results = await self.search_service.search(
-                current_task["research_question"] if isinstance(current_task, dict) else current_task.research_question,
+                search_query,
                 max_results=10
             )
+            
+            # Update state with search results safely
+            if "current_search_results" not in state:
+                state["current_search_results"] = []
+            state["current_search_results"] = search_results[:5]
+            
+            # Send search results notification if callback available
+            if self.progress_callback:
+                await self._send_detailed_progress(
+                    state, "analyzing",
+                    f"{len(search_results)}개의 검색 결과를 분석하고 있습니다...",
+                    f"신뢰도 높은 소스를 선별하고 정보를 추출하는 중입니다.",
+                    sources_found=len(search_results)
+                )
             
             # Prepare research context
             search_context = "\n".join([
@@ -264,11 +305,41 @@ class ResearchWorkflow:
                 description=f"{task_desc}\n\nAvailable Information:\n{search_context}"
             )
             
-            # Conduct research
-            research_result = await self.ollama_client.generate(
+            # Send LLM thinking notification if callback available
+            if self.progress_callback:
+                await self._send_detailed_progress(
+                    state, "thinking",
+                    "AI가 정보를 종합하여 연구를 수행하고 있습니다...",
+                    f"수집된 자료를 바탕으로 심층 분석을 진행 중입니다.",
+                    preview=search_context[:300] + "..."
+                )
+            
+            # Store current thoughts safely
+            if "current_thoughts" not in state:
+                state["current_thoughts"] = ""
+            state["current_thoughts"] = f"분석 중인 주제: {research_q}\n참고 자료: {len(search_results)}개"
+            
+            # Conduct research with streaming
+            research_result = ""
+            chunk_count = 0
+            async for chunk in self.ollama_client.stream_generate(
                 prompt,
                 stage="research"
-            )
+            ):
+                research_result += chunk
+                chunk_count += len(chunk)
+                # Update draft content periodically
+                if chunk_count >= 100:
+                    chunk_count = 0
+                    if "draft_content" not in state:
+                        state["draft_content"] = ""
+                    state["draft_content"] = research_result
+                    if self.progress_callback:
+                        await self._send_detailed_progress(
+                            state, "writing",
+                            "연구 내용을 작성하고 있습니다...",
+                            preview=research_result[-500:] if len(research_result) > 500 else research_result
+                        )
             
             # Create summary
             summary = {
@@ -299,6 +370,16 @@ class ResearchWorkflow:
         """Compress and synthesize research findings."""
         try:
             update_research_progress(state, "synthesizing", 85)
+            
+            # Send detailed progress if callback available
+            if self.progress_callback:
+                await self._send_detailed_progress(
+                    state, "synthesizing",
+                    f"{len(state['research_summaries'])}개의 연구 결과를 통합하고 있습니다...",
+                    "핵심 인사이트를 추출하고 일관된 내러티브를 구성하는 중입니다.",
+                    current_item=len(state['research_summaries']),
+                    total_items=len(state['research_summaries'])
+                )
             
             # Send progress update if callback available
             if self.progress_callback:
@@ -341,6 +422,15 @@ class ResearchWorkflow:
         """Generate final polished report."""
         try:
             update_research_progress(state, "finalizing", 95)
+            
+            # Send detailed progress if callback available
+            if self.progress_callback:
+                await self._send_detailed_progress(
+                    state, "formatting",
+                    "최종 보고서를 정리하고 있습니다...",
+                    "참고문헌, 인용구, 형식을 검토하는 중입니다.",
+                    confidence=0.95
+                )
             
             # Send progress update if callback available
             if self.progress_callback:
@@ -397,3 +487,45 @@ class ResearchWorkflow:
             initial_state["current_stage"] = "error"
             initial_state["progress"] = 0
             return initial_state
+    
+    async def _send_detailed_progress(
+        self,
+        state: ResearchState,
+        progress_type: str,
+        message: str,
+        details: str = None,
+        **kwargs
+    ):
+        """Send detailed progress update."""
+        if not self.progress_callback:
+            return
+        
+        try:
+            detailed_progress = DetailedProgress(
+                type=progress_type,
+                message=message,
+                details=details,
+                **kwargs
+            )
+            
+            # Convert to dict safely (use dict() for compatibility)
+            try:
+                progress_dict = detailed_progress.model_dump()
+            except AttributeError:
+                # Fallback for older pydantic versions
+                progress_dict = detailed_progress.dict()
+            
+            # Add to state's detailed progress safely
+            if "detailed_progress" not in state:
+                state["detailed_progress"] = []
+            state["detailed_progress"].append(progress_dict)
+            
+            # Send via callback
+            await self.progress_callback(
+                state["current_stage"],
+                state["progress"],
+                {"detailed": progress_dict}
+            )
+        except Exception as e:
+            logger.warning(f"Error sending detailed progress: {e}")
+    

@@ -15,11 +15,12 @@ from dotenv import load_dotenv
 
 from ..models.state import (
     ResearchRequest, ResearchResponse, ResearchProgress,
-    ResearchState, LanguageCode, create_research_state
+    ResearchState, LanguageCode, create_research_state, DetailedProgress
 )
 from ..core.ollama_client import OllamaClient
 from ..core.research_workflow import ResearchWorkflow
 from ..services.search_service import SearchService
+from ..services.session_manager import SessionManager
 from ..utils.language_detector import LanguageDetector
 
 # Load environment variables
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 ollama_client: OllamaClient = None
 search_service: SearchService = None
 research_workflow: ResearchWorkflow = None
+session_manager: SessionManager = None
 active_sessions: Dict[str, ResearchState] = {}
 websocket_connections: Dict[str, WebSocket] = {}
 
@@ -45,7 +47,7 @@ sio = socketio.AsyncServer(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
-    global ollama_client, search_service, research_workflow
+    global ollama_client, search_service, research_workflow, session_manager
     
     logger.info("Initializing Deep Research Agent...")
     
@@ -70,6 +72,14 @@ async def lifespan(app: FastAPI):
         # Initialize research workflow
         research_workflow = ResearchWorkflow(ollama_client, search_service)
         logger.info("Research workflow initialized")
+        
+        # Initialize session manager
+        session_manager = SessionManager()
+        logger.info("Session manager initialized")
+        
+        # Load existing sessions
+        existing_sessions = await session_manager.list_sessions()
+        logger.info(f"Found {len(existing_sessions)} existing sessions")
         
         logger.info("Deep Research Agent started successfully!")
         
@@ -122,31 +132,67 @@ class WebSocketManager:
     
     async def send_progress(self, session_id: str, progress_data: Dict[str, Any]):
         """Send progress update to WebSocket."""
-        if session_id in self.connections:
-            try:
-                await self.connections[session_id].send_json(progress_data)
-            except Exception as e:
-                logger.error(f"Failed to send progress to {session_id}: {e}")
-                self.disconnect(session_id)
+        if session_id not in self.connections:
+            logger.debug(f"No WebSocket connection for session {session_id}")
+            return
+            
+        try:
+            websocket = self.connections[session_id]
+            await websocket.send_json(progress_data)
+        except Exception as e:
+            logger.warning(f"Failed to send progress to {session_id}: {e}")
+            self.disconnect(session_id)
 
 websocket_manager = WebSocketManager()
 
 # Progress callback for research workflow
 async def progress_callback(session_id: str, stage: str, progress: int, data: Dict[str, Any] = None):
     """Callback for research progress updates."""
-    progress_data = {
-        "type": "progress_update",
-        "session_id": session_id,
-        "stage": stage,
-        "progress": progress,
-        "data": data or {},
-        "timestamp": datetime.utcnow().isoformat()
-    }
-    
-    await websocket_manager.send_progress(session_id, progress_data)
-    
-    # Also emit via Socket.IO
-    await sio.emit("progress_update", progress_data, room=session_id)
+    try:
+        progress_data = {
+            "type": "progress_update",
+            "session_id": session_id,
+            "stage": stage,
+            "progress": progress,
+            "data": data or {},
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        # Add detailed progress if available
+        if data and "detailed" in data:
+            progress_data["detailed"] = data["detailed"]
+            
+            # Also update the session state for API access
+            if session_id in active_sessions:
+                state = active_sessions[session_id]
+                detailed_data = data.get("detailed", {})
+                if "current_search_results" in detailed_data:
+                    state["current_search_results"] = detailed_data["current_search_results"]
+                if "preview" in detailed_data:
+                    state["draft_content"] = detailed_data["preview"]
+                
+                # Save progress to persistent storage periodically
+                if progress % 10 == 0:  # Save every 10% progress
+                    asyncio.create_task(session_manager.update_session_progress(
+                        session_id, stage, progress,
+                        current_search_results=state.get("current_search_results", []),
+                        draft_content=state.get("draft_content", "")
+                    ))
+        
+        await websocket_manager.send_progress(session_id, progress_data)
+        
+        # Also emit via Socket.IO with more granular events
+        if sio:
+            await sio.emit("progress_update", progress_data, room=session_id)
+            
+            # Emit specific events for different progress types
+            if data and "detailed" in data:
+                detailed_data = data.get("detailed", {})
+                detail_type = detailed_data.get("type")
+                if detail_type:
+                    await sio.emit(f"progress_{detail_type}", detailed_data, room=session_id)
+    except Exception as e:
+        logger.error(f"Error sending progress callback for session {session_id}: {e}")
 
 # API Routes
 
@@ -194,6 +240,9 @@ async def start_research(
         session_id = initial_state["session_id"]
         active_sessions[session_id] = initial_state
         
+        # Save to persistent storage
+        await session_manager.save_session(session_id, initial_state)
+        
         # Start research in background
         background_tasks.add_task(
             execute_research_workflow,
@@ -224,13 +273,19 @@ async def execute_research_workflow(session_id: str, initial_state: ResearchStat
         
         # Create a lambda wrapper for progress_callback to include session_id
         async def workflow_progress_callback(stage: str, progress: int, data: Dict[str, Any] = None):
-            await progress_callback(session_id, stage, progress, data)
+            try:
+                await progress_callback(session_id, stage, progress, data)
+            except Exception as e:
+                logger.warning(f"Progress callback error for session {session_id}: {e}")
         
         # Run workflow with wrapped callback
         final_state = await research_workflow.run_research(initial_state, workflow_progress_callback)
         
         # Update stored session
         active_sessions[session_id] = final_state
+        
+        # Save final state to persistent storage
+        await session_manager.save_session(session_id, final_state)
         
         # Send completion
         if isinstance(final_state, dict):
@@ -259,9 +314,18 @@ async def execute_research_workflow(session_id: str, initial_state: ResearchStat
 @app.get("/api/v1/research/{session_id}")
 async def get_research_status(session_id: str):
     """Get current research session status."""
-    if session_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
+    # Try to get from memory first
+    state = active_sessions.get(session_id)
     
+    # If not in memory, try to load from storage
+    if not state:
+        state = await session_manager.load_session(session_id)
+        if state:
+            active_sessions[session_id] = state
+        else:
+            raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Update the reference
     state = active_sessions[session_id]
     
     return {
@@ -271,16 +335,66 @@ async def get_research_status(session_id: str):
         "language": state["language"],
         "research_question": state["research_question"],
         "final_report": state["final_report"],
+        "detailed_progress": state.get("detailed_progress", [])[-10:],  # Last 10 updates
+        "current_search_results": state.get("current_search_results", []),
+        "current_thoughts": state.get("current_thoughts", ""),
+        "draft_content": (state.get("draft_content") or "")[-1000:],  # Last 1000 chars
+        "research_tasks": [
+            {"question": t.get("research_question"), "completed": i < len(state.get("research_summaries", []))}
+            for i, t in enumerate(state.get("supervisor_requests", []))
+        ] if state.get("supervisor_requests") else [],
         "created_at": state["created_at"].isoformat() if state["created_at"] else None,
         "last_updated": state["last_updated"].isoformat() if state["last_updated"] else None
     }
 
+@app.get("/api/v1/research")
+async def list_research_sessions():
+    """List all research sessions."""
+    try:
+        sessions = await session_manager.list_sessions()
+        return {
+            "sessions": sessions,
+            "total": len(sessions)
+        }
+    except Exception as e:
+        logger.error(f"Failed to list sessions: {e}")
+        return {"sessions": [], "total": 0}
+
+@app.delete("/api/v1/research/{session_id}")
+async def delete_research_session(session_id: str):
+    """Delete a research session."""
+    try:
+        # Remove from memory
+        if session_id in active_sessions:
+            del active_sessions[session_id]
+        
+        # Remove from storage
+        success = await session_manager.delete_session(session_id)
+        
+        if success:
+            return {"message": "Session deleted successfully"}
+        else:
+            raise HTTPException(status_code=404, detail="Session not found")
+            
+    except Exception as e:
+        logger.error(f"Failed to delete session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/v1/research/{session_id}/report")
 async def get_research_report(session_id: str):
     """Get the final research report."""
-    if session_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
+    # Try to get from memory first
+    state = active_sessions.get(session_id)
     
+    # If not in memory, try to load from storage
+    if not state:
+        state = await session_manager.load_session(session_id)
+        if state:
+            active_sessions[session_id] = state
+        else:
+            raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Update the reference
     state = active_sessions[session_id]
     
     if not state["final_report"]:
@@ -308,7 +422,10 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 "type": "status_update",
                 "session_id": session_id,
                 "stage": state["current_stage"],
-                "progress": state["progress"]
+                "progress": state["progress"],
+                "detailed_progress": state.get("detailed_progress", [])[-5:],
+                "current_search_results": state.get("current_search_results", []),
+                "draft_content": state.get("draft_content", "")[-500:]
             })
         
         # Keep connection alive
