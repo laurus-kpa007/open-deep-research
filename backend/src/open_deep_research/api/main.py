@@ -1,0 +1,353 @@
+"""Main FastAPI application for Deep Research Agent."""
+
+import os
+import logging
+import asyncio
+from contextlib import asynccontextmanager
+from typing import Dict, Any
+from datetime import datetime
+import uvicorn
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import socketio
+from dotenv import load_dotenv
+
+from ..models.state import (
+    ResearchRequest, ResearchResponse, ResearchProgress,
+    ResearchState, LanguageCode, create_research_state
+)
+from ..core.ollama_client import OllamaClient
+from ..core.research_workflow import ResearchWorkflow
+from ..services.search_service import SearchService
+from ..utils.language_detector import LanguageDetector
+
+# Load environment variables
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logger = logging.getLogger(__name__)
+
+# Global instances
+ollama_client: OllamaClient = None
+search_service: SearchService = None
+research_workflow: ResearchWorkflow = None
+active_sessions: Dict[str, ResearchState] = {}
+websocket_connections: Dict[str, WebSocket] = {}
+
+# Socket.IO server for real-time communication
+sio = socketio.AsyncServer(
+    async_mode='asgi',
+    cors_allowed_origins=os.getenv("FRONTEND_URL", "http://localhost:3000").split(",")
+)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan manager."""
+    global ollama_client, search_service, research_workflow
+    
+    logger.info("Initializing Deep Research Agent...")
+    
+    # Initialize services
+    try:
+        # Initialize Ollama client
+        ollama_client = OllamaClient()
+        logger.info("Ollama client initialized")
+        
+        # Check Ollama health
+        if not await ollama_client.health_check():
+            logger.warning("Ollama server not available, attempting to start...")
+            # In production, you might want to wait or fail here
+        
+        # Initialize search service
+        search_service = SearchService()
+        if await search_service.health_check():
+            logger.info("Search service initialized successfully")
+        else:
+            logger.warning("Search service not available")
+        
+        # Initialize research workflow
+        research_workflow = ResearchWorkflow(ollama_client, search_service)
+        logger.info("Research workflow initialized")
+        
+        logger.info("Deep Research Agent started successfully!")
+        
+    except Exception as e:
+        logger.error(f"Failed to initialize services: {e}")
+        raise
+    
+    yield
+    
+    # Cleanup
+    logger.info("Shutting down Deep Research Agent...")
+
+# Create FastAPI app
+app = FastAPI(
+    title="Deep Research Agent API",
+    description="Web-based implementation of Open Deep Research Agent with Ollama",
+    version="0.1.0",
+    lifespan=lifespan
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.getenv("FRONTEND_URL", "http://localhost:3000").split(","),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Mount Socket.IO
+socket_app = socketio.ASGIApp(sio, app)
+
+class WebSocketManager:
+    """Manager for WebSocket connections."""
+    
+    def __init__(self):
+        self.connections: Dict[str, WebSocket] = {}
+    
+    async def connect(self, session_id: str, websocket: WebSocket):
+        """Connect a WebSocket for a session."""
+        await websocket.accept()
+        self.connections[session_id] = websocket
+        logger.info(f"WebSocket connected for session: {session_id}")
+    
+    def disconnect(self, session_id: str):
+        """Disconnect a WebSocket."""
+        if session_id in self.connections:
+            del self.connections[session_id]
+            logger.info(f"WebSocket disconnected for session: {session_id}")
+    
+    async def send_progress(self, session_id: str, progress_data: Dict[str, Any]):
+        """Send progress update to WebSocket."""
+        if session_id in self.connections:
+            try:
+                await self.connections[session_id].send_json(progress_data)
+            except Exception as e:
+                logger.error(f"Failed to send progress to {session_id}: {e}")
+                self.disconnect(session_id)
+
+websocket_manager = WebSocketManager()
+
+# Progress callback for research workflow
+async def progress_callback(session_id: str, stage: str, progress: int, data: Dict[str, Any] = None):
+    """Callback for research progress updates."""
+    progress_data = {
+        "type": "progress_update",
+        "session_id": session_id,
+        "stage": stage,
+        "progress": progress,
+        "data": data or {},
+        "timestamp": datetime.utcnow().isoformat()
+    }
+    
+    await websocket_manager.send_progress(session_id, progress_data)
+    
+    # Also emit via Socket.IO
+    await sio.emit("progress_update", progress_data, room=session_id)
+
+# API Routes
+
+@app.get("/api/v1/health")
+async def health_check():
+    """Health check endpoint."""
+    health_status = {
+        "status": "healthy",
+        "ollama_available": False,
+        "search_available": False
+    }
+    
+    try:
+        if ollama_client:
+            health_status["ollama_available"] = await ollama_client.health_check()
+        
+        if search_service:
+            health_status["search_available"] = await search_service.health_check()
+            
+    except Exception as e:
+        logger.error(f"Health check error: {e}")
+    
+    return health_status
+
+@app.post("/api/v1/research/start", response_model=ResearchResponse)
+async def start_research(
+    request: ResearchRequest,
+    background_tasks: BackgroundTasks
+):
+    """Start a new research session."""
+    try:
+        # Detect language if not specified
+        language = request.language
+        if not language:
+            language = LanguageDetector.detect_language(request.query)
+        
+        # Create initial research state
+        initial_state = create_research_state(
+            research_question=request.query,
+            language=language,
+            max_researchers=request.max_researchers
+        )
+        
+        # Store session
+        session_id = initial_state["session_id"]
+        active_sessions[session_id] = initial_state
+        
+        # Start research in background
+        background_tasks.add_task(
+            execute_research_workflow,
+            session_id,
+            initial_state
+        )
+        
+        return ResearchResponse(
+            session_id=session_id,
+            status="started",
+            language=language,
+            message="Research started successfully"
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to start research: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def execute_research_workflow(session_id: str, initial_state: ResearchState):
+    """Execute the research workflow in background."""
+    try:
+        logger.info(f"Starting research workflow for session: {session_id}")
+        logger.info(f"Initial state type: {type(initial_state)}")
+        logger.info(f"Initial state has session_id: {'session_id' in initial_state if isinstance(initial_state, dict) else 'Not a dict'}")
+        
+        # Send initial progress
+        await progress_callback(session_id, "initializing", 5)
+        
+        # Create a lambda wrapper for progress_callback to include session_id
+        async def workflow_progress_callback(stage: str, progress: int, data: Dict[str, Any] = None):
+            await progress_callback(session_id, stage, progress, data)
+        
+        # Run workflow with wrapped callback
+        final_state = await research_workflow.run_research(initial_state, workflow_progress_callback)
+        
+        # Update stored session
+        active_sessions[session_id] = final_state
+        
+        # Send completion
+        if isinstance(final_state, dict):
+            await progress_callback(
+                session_id,
+                final_state.get("current_stage", "completed"),
+                final_state.get("progress", 100),
+                {"final_report": final_state.get("final_report")}
+            )
+        else:
+            logger.error(f"Final state is not a dict: {type(final_state)}")
+        
+        logger.info(f"Research workflow completed for session: {session_id}")
+        
+    except Exception as e:
+        logger.error(f"Research workflow failed for session {session_id}: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        await progress_callback(
+            session_id,
+            "error",
+            0,
+            {"error": str(e)}
+        )
+
+@app.get("/api/v1/research/{session_id}")
+async def get_research_status(session_id: str):
+    """Get current research session status."""
+    if session_id not in active_sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    state = active_sessions[session_id]
+    
+    return {
+        "session_id": session_id,
+        "stage": state["current_stage"],
+        "progress": state["progress"],
+        "language": state["language"],
+        "research_question": state["research_question"],
+        "final_report": state["final_report"],
+        "created_at": state["created_at"].isoformat() if state["created_at"] else None,
+        "last_updated": state["last_updated"].isoformat() if state["last_updated"] else None
+    }
+
+@app.get("/api/v1/research/{session_id}/report")
+async def get_research_report(session_id: str):
+    """Get the final research report."""
+    if session_id not in active_sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    state = active_sessions[session_id]
+    
+    if not state["final_report"]:
+        raise HTTPException(status_code=404, detail="Report not yet available")
+    
+    return {
+        "session_id": session_id,
+        "report": state["final_report"],
+        "language": state["language"],
+        "research_question": state["research_question"],
+        "sources": [s.get("sources", []) for s in state["research_summaries"]] if state["research_summaries"] else [],
+        "generated_at": state["last_updated"].isoformat() if state["last_updated"] else None
+    }
+
+@app.websocket("/ws/{session_id}")
+async def websocket_endpoint(websocket: WebSocket, session_id: str):
+    """WebSocket endpoint for real-time progress updates."""
+    await websocket_manager.connect(session_id, websocket)
+    
+    try:
+        # Send current status if session exists
+        if session_id in active_sessions:
+            state = active_sessions[session_id]
+            await websocket.send_json({
+                "type": "status_update",
+                "session_id": session_id,
+                "stage": state["current_stage"],
+                "progress": state["progress"]
+            })
+        
+        # Keep connection alive
+        while True:
+            try:
+                data = await websocket.receive_text()
+                # Handle any client messages if needed
+            except WebSocketDisconnect:
+                break
+                
+    except Exception as e:
+        logger.error(f"WebSocket error for session {session_id}: {e}")
+    finally:
+        websocket_manager.disconnect(session_id)
+
+# Socket.IO events
+@sio.event
+async def connect(sid, environ):
+    """Socket.IO client connected."""
+    logger.info(f"Socket.IO client connected: {sid}")
+
+@sio.event
+async def disconnect(sid):
+    """Socket.IO client disconnected."""
+    logger.info(f"Socket.IO client disconnected: {sid}")
+
+@sio.event
+async def join_session(sid, data):
+    """Join a research session room."""
+    session_id = data.get("session_id")
+    if session_id:
+        await sio.enter_room(sid, session_id)
+        logger.info(f"Client {sid} joined session {session_id}")
+
+if __name__ == "__main__":
+    uvicorn.run(
+        "main:socket_app",  # Use the Socket.IO app
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="info"
+    )

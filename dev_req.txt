@@ -1,0 +1,9 @@
+- Title : AI Deep Research Agent
+
+* Reference : https://github.com/langchain-ai/open_deep_research
+* 개발 요건 :
+- 기본구조는 Open Deep Research github 과제를 참고해서 만들것
+- LLM은 로컬 Ollama를 연결해서 최신 모델(Gemma3:12B 등)을 사용할것
+- WebUI 인터페이스로 프론트엔드는 구성할것
+- 언어는 한국어와 영어로 질문할수 있으니 질문하는 언어로 답변해야함
+- 다양한 소스를 기준으로 완성도 높은 보고서를 작성해야함
