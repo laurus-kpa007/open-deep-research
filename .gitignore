@@ -68,3 +68,7 @@ htmlcov/
 # Temporary files
 *.tmp
 .claude/
+
+# Session data
+backend/sessions/
+sessions/

@@ -23,8 +23,16 @@ from ..services.search_service import SearchService
 from ..services.session_manager import SessionManager
 from ..utils.language_detector import LanguageDetector
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from root directory
+from pathlib import Path
+root_dir = Path(__file__).resolve().parents[4]  # Navigate to project root
+env_path = root_dir / '.env'
+load_dotenv(env_path)
+
+# Import CORS configuration
+import sys
+sys.path.insert(0, str(root_dir))
+from cors_config import get_cors_config, get_cors_origins
 
 # Configure logging
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -39,9 +47,13 @@ active_sessions: Dict[str, ResearchState] = {}
 websocket_connections: Dict[str, WebSocket] = {}
 
 # Socket.IO server for real-time communication
+# Socket.IO needs "*" for development or explicit origins
+cors_origins = get_cors_origins()
+logger.info(f"Socket.IO CORS origins: {cors_origins}")
+
 sio = socketio.AsyncServer(
     async_mode='asgi',
-    cors_allowed_origins=os.getenv("FRONTEND_URL", "http://localhost:3000").split(",")
+    cors_allowed_origins="*" if os.getenv("ENVIRONMENT", "development") == "development" else cors_origins
 )
 
 @asynccontextmanager
@@ -100,13 +112,15 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add CORS middleware
+# Add CORS middleware with proper configuration
+cors_config = get_cors_config()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("FRONTEND_URL", "http://localhost:3000").split(","),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=cors_config["allow_origins"],
+    allow_credentials=cors_config["allow_credentials"],
+    allow_methods=cors_config["allow_methods"],
+    allow_headers=cors_config["allow_headers"],
+    expose_headers=cors_config["expose_headers"]
 )
 
 # Mount Socket.IO
