@@ -4,53 +4,63 @@
 
 ### 시스템 구성
 ```
-Frontend (React/Next.js) ←→ Backend API (FastAPI/Python) ←→ Ollama LLM ←→ External APIs
-                                         ↓
-                                   Database (SQLite/PostgreSQL)
+Frontend (Next.js 14) ←→ Backend API (FastAPI/Socket.IO) ←→ Ollama LLM ←→ External APIs
+         ↓                           ↓                         ↓
+    Zustand Store              SQLite Database          Gemma 3:4B/12B
+         ↓                           ↓
+    WebSocket Client          Session Storage
 ```
 
 ## 2. 백엔드 아키텍처 설계
 
 ### 2.1 핵심 컴포넌트
-- **FastAPI 서버**: RESTful API 제공
-- **Ollama 통합**: 로컬 LLM 모델 (Gemma 2:12B) 연결
-- **Research Engine**: 다단계 연구 프로세스 관리
-- **Search Integration**: Tavily API 등 외부 검색 서비스
+- **FastAPI 서버**: RESTful API 및 WebSocket 지원
+- **Socket.IO 통합**: 실시간 양방향 통신
+- **Ollama 통합**: 로컬 LLM 모델 (Gemma 3:4B/12B) 연결
+- **LangGraph Engine**: 체계적인 워크플로우 관리
+- **Search Integration**: Tavily API를 통한 웹 검색
+- **Session Manager**: 연구 세션 저장 및 재개
 - **Report Generator**: 구조화된 보고서 생성
 
 ### 2.2 디렉토리 구조
 ```
 backend/
-├── app/
+├── src/open_deep_research/
 │   ├── api/
-│   │   ├── v1/
-│   │   │   ├── research.py      # 연구 요청 처리
-│   │   │   ├── reports.py       # 보고서 관리
-│   │   │   └── health.py        # 헬스체크
+│   │   ├── main.py              # FastAPI + Socket.IO 메인
+│   │   ├── endpoints.py         # REST API 엔드포인트
+│   │   └── websocket.py         # WebSocket 핸들러
 │   ├── core/
 │   │   ├── config.py            # 설정 관리
-│   │   ├── ollama_client.py     # Ollama 연결 클라이언트
-│   │   └── research_engine.py   # 핵심 연구 엔진
+│   │   ├── workflow.py          # LangGraph 워크플로우
+│   │   └── ollama_client.py     # Ollama 클라이언트
 │   ├── models/
-│   │   ├── request.py           # 요청 모델
-│   │   └── response.py          # 응답 모델
+│   │   ├── research.py          # 연구 데이터 모델
+│   │   └── session.py           # 세션 모델
 │   ├── services/
-│   │   ├── search_service.py    # 검색 서비스
+│   │   ├── search_service.py    # Tavily 검색 서비스
 │   │   ├── llm_service.py       # LLM 서비스
+│   │   ├── session_service.py   # 세션 관리 서비스
 │   │   └── report_service.py    # 보고서 서비스
+│   ├── prompts/
+│   │   └── templates.py         # 프롬프트 템플릿
 │   └── utils/
-│       ├── language_detector.py # 언어 감지
+│       ├── language.py          # 언어 감지/처리
 │       └── formatters.py        # 출력 포맷터
+├── sessions/                     # 세션 데이터 저장
+├── cors_config.py               # CORS 설정
+└── pyproject.toml               # Poetry 의존성 관리
 ```
 
 ## 3. 프론트엔드 아키텍처 설계
 
 ### 3.1 기술 스택
 - **Framework**: Next.js 14 (App Router)
-- **UI Library**: Tailwind CSS + Shadcn/ui
+- **UI Library**: Tailwind CSS
 - **State Management**: Zustand
-- **HTTP Client**: Axios
-- **국제화**: next-i18next
+- **WebSocket Client**: Socket.IO Client
+- **HTTP Client**: Fetch API (내장)
+- **Progress Tracking**: 커스텀 DetailedProgress 컴포넌트
 
 ### 3.2 컴포넌트 구조
 ```
@@ -58,24 +68,21 @@ frontend/
 ├── src/
 │   ├── app/
 │   │   ├── layout.tsx           # 루트 레이아웃
-│   │   ├── page.tsx             # 홈페이지
-│   │   └── research/
-│   │       ├── page.tsx         # 연구 페이지
-│   │       └── [id]/page.tsx    # 연구 결과 페이지
+│   │   ├── page.tsx             # 메인 연구 페이지
+│   │   ├── providers.tsx        # Context 프로바이더
+│   │   └── globals.css          # 전역 스타일
 │   ├── components/
-│   │   ├── ui/                  # shadcn/ui 컴포넌트
-│   │   ├── research/
-│   │   │   ├── QueryForm.tsx    # 질문 입력 폼
-│   │   │   ├── ProgressBar.tsx  # 진행 상태
-│   │   │   └── ResultViewer.tsx # 결과 뷰어
-│   │   └── layout/
-│   │       ├── Header.tsx       # 헤더
-│   │       └── Sidebar.tsx      # 사이드바
+│   │   ├── ResearchForm.tsx     # 연구 질문 입력 폼
+│   │   ├── ResearchProgress.tsx # 실시간 진행 상태
+│   │   ├── DetailedProgress.jsx # 세부 진행률 표시
+│   │   ├── ResearchResults.tsx  # 결과 뷰어
+│   │   └── HealthCheck.tsx      # 시스템 상태 체크
 │   ├── hooks/
-│   │   ├── useResearch.ts       # 연구 훅
-│   │   └── useLanguage.ts       # 언어 훅
+│   │   └── useResearchSession.ts # 세션 관리 훅
+│   ├── lib/
+│   │   └── api.ts               # API 클라이언트
 │   └── store/
-│       └── researchStore.ts     # 상태 관리
+│       └── index.ts             # Zustand 스토어
 ```
 
 ### 3.3 주요 페이지 구성
@@ -145,12 +152,16 @@ Query Input → Language Detection → Multi-Source Search → LLM Analysis → 
 }
 ```
 
-### 5.3 연구 프로세스
-1. **초기 검색**: 키워드 기반 다중 소스 검색
-2. **정보 수집**: 검색 결과 요약 및 분석
-3. **심화 연구**: LLM을 통한 추가 질문 생성 및 검색
-4. **내용 통합**: 수집된 정보의 통합 및 구조화
-5. **보고서 작성**: 최종 보고서 생성 및 포맷팅
+### 5.3 연구 프로세스 (LangGraph 워크플로우)
+1. **초기화 단계**: 세션 생성 및 언어 감지
+2. **계획 수립**: AI가 연구 계획 및 하위 질문 생성
+3. **병렬 검색**: 여러 연구원이 동시에 정보 수집
+   - Tavily API를 통한 웹 검색
+   - 각 하위 질문별 독립적 조사
+4. **정보 분석**: LLM을 통한 수집 정보 분석
+5. **내용 통합**: 모든 정보를 종합하여 구조화
+6. **보고서 작성**: 최종 보고서 생성 (인용 포함)
+7. **세션 저장**: 연구 결과 및 상태 영구 저장
 
 ## 6. 기술적 구현 세부사항
 
@@ -159,25 +170,70 @@ Query Input → Language Detection → Multi-Source Search → LLM Analysis → 
 class OllamaClient:
     def __init__(self, base_url: str = "http://localhost:11434"):
         self.base_url = base_url
-        self.model = "gemma2:12b"
-    
-    async def generate_response(self, prompt: str, language: str) -> str:
-        # Ollama API 호출 로직
-        pass
+        self.model = os.getenv("OLLAMA_MODEL", "gemma3:4b")
+
+    async def generate_response(
+        self,
+        prompt: str,
+        language: str,
+        temperature: float = 0.7
+    ) -> str:
+        # Ollama API 호출 with streaming support
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.base_url}/api/generate",
+                json={
+                    "model": self.model,
+                    "prompt": prompt,
+                    "stream": True,
+                    "options": {"temperature": temperature}
+                }
+            ) as response:
+                # Stream processing logic
+                pass
 ```
 
 ### 6.2 API 엔드포인트 설계
 ```python
-# 주요 API 엔드포인트
+# RESTful API 엔드포인트
 POST /api/v1/research/start      # 연구 시작
 GET  /api/v1/research/{id}       # 연구 상태 조회
 GET  /api/v1/research/{id}/report # 보고서 조회
-POST /api/v1/research/{id}/export # 보고서 내보내기
+GET  /api/v1/sessions            # 세션 목록 조회
+GET  /api/v1/sessions/{id}       # 세션 상세 조회
+DELETE /api/v1/sessions/{id}     # 세션 삭제
+GET  /health                     # 헬스체크
+
+# WebSocket 이벤트
+socket.on('start_research')      # 연구 시작
+socket.on('progress_update')     # 진행 상황 업데이트
+socket.on('research_complete')   # 연구 완료
+socket.on('error')              # 오류 처리
 ```
 
-### 6.3 실시간 업데이트
-- **WebSocket**: 연구 진행 상황 실시간 전달
-- **Server-Sent Events**: 브라우저 호환성을 위한 대안
+### 6.3 실시간 업데이트 (Socket.IO)
+```python
+# 서버 측 이벤트 발신
+async def emit_progress(session_id: str, data: dict):
+    await sio.emit(
+        'progress_update',
+        {
+            'session_id': session_id,
+            'stage': data['stage'],
+            'percentage': data['percentage'],
+            'message': data['message'],
+            'details': data.get('details', {})
+        },
+        room=session_id
+    )
+
+# 클라이언트 측 수신
+socket.on('progress_update', (data) => {
+    updateProgressBar(data.percentage);
+    updateStatusMessage(data.message);
+    updateDetailedProgress(data.details);
+});
+```
 
 ## 7. 배포 및 운영
 
@@ -190,26 +246,45 @@ services:
     build: ./backend
     ports:
       - "8000:8000"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - DATABASE_URL=sqlite:///./research_database.db
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - CORS_ORIGINS=http://localhost:3000
+    volumes:
+      - ./backend/sessions:/app/sessions
     depends_on:
       - ollama
-  
+
   frontend:
     build: ./frontend
     ports:
       - "3000:3000"
-  
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8000
+
   ollama:
     image: ollama/ollama
     ports:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    command: serve
+
+volumes:
+  ollama_data:
 ```
 
 ### 7.2 성능 최적화
-- **캐싱**: Redis를 통한 검색 결과 캐싱
-- **비동기 처리**: 장시간 소요 작업의 백그라운드 처리
-- **리소스 관리**: Ollama 모델 로딩 최적화
+- **모델 선택**:
+  - Gemma 3:4B - 빠른 응답, 적은 메모리 (권장)
+  - Gemma 3:12B - 높은 품질, 더 많은 리소스
+- **병렬 처리**: 여러 연구원이 동시에 작업 수행
+- **세션 캐싱**: SQLite 기반 결과 캐싱
+- **스트리밍**: LLM 응답 실시간 스트리밍
+- **비동기 처리**: FastAPI의 async/await 활용
+- **연결 풀링**: 데이터베이스 연결 최적화
 
 ## 8. 개발 로드맵
 
@@ -231,10 +306,13 @@ services:
 ## 핵심 특징
 
 1. **로컬 LLM 활용**: Ollama를 통한 프라이버시 보호
-2. **다국어 지원**: 한국어/영어 질문 및 답변
-3. **실시간 피드백**: 연구 진행 상황 실시간 표시
-4. **고품질 보고서**: 다양한 소스 기반 구조화된 문서
-5. **확장 가능한 아키텍처**: 모듈화된 설계로 기능 확장 용이
+2. **다국어 지원**: 한국어/영어 자동 감지 및 응답
+3. **실시간 진행 표시**: Socket.IO 기반 세부 진행률 추적
+4. **세션 지속성**: 연구 중단 후 재개 가능
+5. **병렬 연구**: 여러 AI 연구원의 동시 작업
+6. **고품질 보고서**: 인용 포함 구조화된 문서
+7. **원격 접속**: 네트워크 내 여러 디바이스 지원
+8. **확장 가능한 아키텍처**: LangGraph 기반 모듈화 설계
 
 ---
 *참고: https://github.com/langchain-ai/open_deep_research*
