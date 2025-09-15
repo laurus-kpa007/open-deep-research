@@ -255,7 +255,8 @@ class VLLMClient(BaseLLMClient):
             base_url=f"{self.base_url}/v1",
             api_key=self.api_key,
             model=self.model,
-            temperature=0.3,
+            temperature=0.4,  # Slightly increased for more detailed research
+            max_tokens=3000,  # Allow longer research outputs
             timeout=timeout,
             max_retries=2
         )
@@ -264,7 +265,8 @@ class VLLMClient(BaseLLMClient):
             base_url=f"{self.base_url}/v1",
             api_key=self.api_key,
             model=self.model,
-            temperature=0.2,
+            temperature=0.3,  # Slightly increased for better synthesis
+            max_tokens=3500,  # Allow comprehensive compression
             timeout=timeout,
             max_retries=2
         )
@@ -273,7 +275,8 @@ class VLLMClient(BaseLLMClient):
             base_url=f"{self.base_url}/v1",
             api_key=self.api_key,
             model=self.model,
-            temperature=0.4,
+            temperature=0.6,  # Increased for richer, more creative content
+            max_tokens=4000,  # Allow longer responses
             timeout=timeout,
             max_retries=2
         )

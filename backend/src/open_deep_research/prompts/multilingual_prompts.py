@@ -103,27 +103,37 @@ Individual Research Summaries:
 
 Create a final comprehensive report that:
 
-1. **Executive Summary**
-   - Key findings overview
-   - Main insights and conclusions
+1. **Executive Summary** (300-500 words)
+   - Comprehensive overview of all key findings
+   - Main insights and their implications
+   - Strategic conclusions and recommendations
 
-2. **Detailed Analysis**
-   - Synthesize findings from all researchers
-   - Identify patterns and themes
-   - Resolve any conflicting information
-   - Highlight the most important insights
+2. **Detailed Analysis** (1500-2000 words)
+   - In-depth synthesis of findings from all researchers
+   - Thorough exploration of patterns, themes, and relationships
+   - Detailed resolution of any conflicting information with explanations
+   - Deep dive into the most important insights with context
+   - Multiple perspectives and viewpoints where relevant
 
-3. **Supporting Evidence**
-   - Key excerpts and quotes
-   - Source citations
-   - Statistical or factual support
+3. **Supporting Evidence** (500-800 words)
+   - Extensive key excerpts and quotes with analysis
+   - Complete source citations with credibility assessment
+   - Statistical data, factual support, and empirical evidence
+   - Case studies or examples where applicable
 
-4. **Conclusions**
-   - Clear conclusions based on the research
-   - Implications and significance
-   - Areas for further investigation if relevant
+4. **Implications and Applications** (400-600 words)
+   - Practical applications of the findings
+   - Impact on relevant fields or industries
+   - Potential future developments
 
-Ensure the report is well-organized, coherent, and comprehensive while avoiding redundancy."""
+5. **Conclusions and Recommendations** (500-700 words)
+   - Comprehensive conclusions with detailed reasoning
+   - Strategic implications and significance
+   - Specific, actionable recommendations
+   - Areas for further investigation with proposed methodologies
+   - Limitations of current research and potential solutions
+
+Ensure the report is extensive, detailed, and thoroughly explores all aspects of the research. Provide rich context, multiple examples, and comprehensive analysis throughout. The final report should be at least 3000 words."""
     }
     
     # Korean prompts
