@@ -7,18 +7,19 @@ A web-based research tool powered by local LLM via Ollama, supporting Korean and
 
 ## ✨ 주요 특징 / Key Features
 
-- 🤖 **로컬 LLM 통합** - Ollama와 Gemma 3 모델을 사용한 프라이버시 보장
+- 🤖 **다중 LLM 지원** - Ollama, vLLM, OpenAI 등 다양한 프로바이더 지원
 - 🌐 **다국어 지원** - 한국어/영어 자동 감지 및 응답
 - ⚡ **실시간 진행 상황** - WebSocket 기반 실시간 업데이트 및 세부 진행률 표시
 - 💾 **세션 지속성** - 연구 세션 저장 및 재개 기능
-- 📊 **고품질 보고서** - 다중 소스 기반 구조화된 연구 보고서
+- 📊 **고품질 보고서** - 3000+ 단어의 상세한 구조화 연구 보고서
 - 🔄 **원격 접속 지원** - 네트워크 내 여러 디바이스에서 접속 가능
 - 🐳 **Docker 지원** - 간편한 배포 및 관리
+- ⚙️ **유연한 설정** - 컨텍스트 길이, 온도, 토큰 수 등 상세 조정 가능
 
 ## 🏗️ 아키텍처 / Architecture
 
 ```
-Frontend (Next.js) ↔ Backend (FastAPI) ↔ Ollama (Gemma 3:4B)
+Frontend (Next.js) ↔ Backend (FastAPI) ↔ LLM Provider (Ollama/vLLM/OpenAI)
         ↓                    ↓
     WebSocket           SQLite Database
     (Real-time)         (Session Storage)
@@ -26,7 +27,10 @@ Frontend (Next.js) ↔ Backend (FastAPI) ↔ Ollama (Gemma 3:4B)
 
 - **Frontend**: Next.js 14, TypeScript, Tailwind CSS, React Query
 - **Backend**: FastAPI, LangGraph, Pydantic, Socket.IO
-- **LLM**: Ollama with Gemma 3:4B (customizable)
+- **LLM Providers**:
+  - Ollama (Gemma 3:4B/12B)
+  - vLLM (Custom models with adjustable context length)
+  - OpenAI API compatible services
 - **Database**: SQLite with session persistence
 - **Search**: Tavily API
 - **Real-time**: WebSocket for live updates
@@ -235,11 +239,17 @@ npm run type-check
 
 ### 일반적인 문제 / Common Issues
 
-1. **Ollama 연결 실패**
-   - Ollama 서비스가 실행 중인지 확인: `ollama list`
-   - 모델이 설치되어 있는지 확인: `ollama list`
-   - 포트 충돌 확인: `netstat -tulpn | grep 11434`
-   - 원격 접속 시 IP 주소 확인: `OLLAMA_BASE_URL` 환경 변수
+1. **LLM 연결 실패**
+   - **Ollama**: 서비스 실행 확인 (`ollama list`), 모델 설치 확인
+   - **vLLM**: 서버 실행 및 컨텍스트 길이 설정 확인
+     ```bash
+     python -m vllm.entrypoints.openai.api_server \
+       --model your-model \
+       --max-model-len 8192 \
+       --host 0.0.0.0 --port 2345
+     ```
+   - 포트 충돌 확인
+   - 원격 접속 시 IP 주소 확인: 환경 변수
 
 2. **검색 기능 제한**
    - Tavily API 키가 설정되었는지 확인
@@ -279,17 +289,22 @@ LOG_LEVEL=DEBUG poetry run uvicorn src.open_deep_research.api.main:socket_app --
 
 ### 성능 튜닝 / Performance Tuning
 
-1. **Ollama 설정**
+1. **LLM 설정 최적화**
    ```bash
-   # GPU 사용 (NVIDIA CUDA)
+   # Ollama GPU 사용 (NVIDIA CUDA)
    CUDA_VISIBLE_DEVICES=0 ollama serve
 
-   # 메모리 제한 및 원격 접속 허용
-   OLLAMA_HOST=0.0.0.0:11434 OLLAMA_MAX_LOADED_MODELS=1 ollama serve
+   # vLLM 고급 설정
+   python -m vllm.entrypoints.openai.api_server \
+     --model your-model \
+     --max-model-len 16384 \  # 더 긴 컨텍스트
+     --gpu-memory-utilization 0.9 \
+     --host 0.0.0.0 --port 2345
 
-   # 모델 선택 최적화
-   # - gemma3:4b: 빠른 응답, 적은 메모리 (권장)
+   # 모델 선택 가이드
+   # - gemma3:4b: 빠른 응답, 적은 메모리
    # - gemma3:12b: 높은 품질, 더 많은 메모리
+   # - Custom vLLM models: 최대 유연성
    ```
 
 2. **동시 연구원 수 조절**

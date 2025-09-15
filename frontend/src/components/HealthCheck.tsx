@@ -63,7 +63,7 @@ export default function HealthCheck() {
               <div className="flex items-center space-x-2">
                 <span className={`w-2 h-2 rounded-full ${llmAvailable ? 'bg-green-400' : 'bg-red-400'}`}></span>
                 <span className={llmAvailable ? 'text-green-700' : 'text-red-700'}>
-                  {providerName} LLM: {llmAvailable ? '연결됨 / Connected' : '연결 안됨 / Disconnected'}
+                  {providerName} : {llmAvailable ? '연결됨 / Connected' : '연결 안됨 / Disconnected'}
                 </span>
               </div>
               <div className="flex items-center space-x-2">

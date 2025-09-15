@@ -44,7 +44,16 @@ pip install vllm
 python -m vllm.entrypoints.openai.api_server \
     --model meta-llama/Llama-3-8b \
     --port 8000 \
-    --host 0.0.0.0
+    --host 0.0.0.0 \
+    --max-model-len 8192  # Adjust context length (default: 4096)
+
+# For even longer context (requires more GPU memory)
+python -m vllm.entrypoints.openai.api_server \
+    --model meta-llama/Llama-3-8b \
+    --port 8000 \
+    --host 0.0.0.0 \
+    --max-model-len 16384 \
+    --gpu-memory-utilization 0.9
 ```
 
 #### vLLM with API Key Authentication
@@ -107,12 +116,23 @@ This will test:
 
 ### Performance Comparison
 
-| Provider | Latency | Throughput | Memory Usage | Best For |
-|----------|---------|------------|--------------|----------|
-| Ollama | Low | Medium | Low | Local development, quick responses |
-| vLLM | Medium | High | High | Production, batch processing |
+| Provider | Latency | Throughput | Memory Usage | Context Length | Best For |
+|----------|---------|------------|--------------|----------------|----------|
+| Ollama | Low | Medium | Low | 4K-8K tokens | Local development, quick responses |
+| vLLM | Medium | High | High | 4K-32K tokens (configurable) | Production, long documents, batch processing |
 
 ## Troubleshooting
+
+### Context Length Overflow
+If you encounter "context length overflow" errors:
+```bash
+# Increase max-model-len when starting vLLM
+python -m vllm.entrypoints.openai.api_server \
+    --model your-model \
+    --max-model-len 16384  # or 32768 for very long contexts
+```
+
+Note: Longer context requires more GPU memory. Monitor with `nvidia-smi`.
 
 ### vLLM Server Not Found
 ```bash
