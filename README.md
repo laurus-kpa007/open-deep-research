@@ -24,7 +24,7 @@ Frontend (Next.js) ↔ Backend (FastAPI) ↔ Ollama (Gemma 3:4B)
     (Real-time)         (Session Storage)
 ```
 
-- **Frontend**: Next.js 14, TypeScript, Tailwind CSS, Zustand
+- **Frontend**: Next.js 14, TypeScript, Tailwind CSS, React Query
 - **Backend**: FastAPI, LangGraph, Pydantic, Socket.IO
 - **LLM**: Ollama with Gemma 3:4B (customizable)
 - **Database**: SQLite with session persistence

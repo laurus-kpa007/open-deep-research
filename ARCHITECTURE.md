@@ -29,7 +29,7 @@ graph TB
     subgraph "Frontend Layer"
         UI[Next.js 14 UI<br/>React + TypeScript]
         WS[Socket.IO Client]
-        ZS[Zustand Store]
+        RQ[React Query<br/>State Management]
     end
 
     subgraph "Backend Layer"
@@ -58,7 +58,7 @@ graph TB
 
     UI <--> API
     UI <--> SIO
-    UI <--> ZS
+    UI <--> RQ
 
     API --> CORS
     API --> WF
@@ -101,7 +101,7 @@ graph LR
     end
 
     subgraph "State Management"
-        ZS[Zustand Store]
+        RQ[React Query]
         RS[Research State]
         PS[Progress State]
         SS[Session State]
@@ -111,7 +111,7 @@ graph LR
     App --> DP
     App --> RR
     URS --> API
-    URS --> ZS
+    URS --> RQ
     App --> RR
     App --> HC
     

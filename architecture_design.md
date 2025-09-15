@@ -57,9 +57,10 @@ backend/
 ### 3.1 기술 스택
 - **Framework**: Next.js 14 (App Router)
 - **UI Library**: Tailwind CSS
-- **State Management**: Zustand
+- **State Management**: React Query (@tanstack/react-query)
 - **WebSocket Client**: Socket.IO Client
 - **HTTP Client**: Fetch API (내장)
+- **Toast Notifications**: React Hot Toast
 - **Progress Tracking**: 커스텀 DetailedProgress 컴포넌트
 
 ### 3.2 컴포넌트 구조
@@ -78,11 +79,11 @@ frontend/
 │   │   ├── ResearchResults.tsx  # 결과 뷰어
 │   │   └── HealthCheck.tsx      # 시스템 상태 체크
 │   ├── hooks/
-│   │   └── useResearchSession.ts # 세션 관리 훅
+│   │   └── useResearchSession.ts # 세션 관리 훅 (React Query)
 │   ├── lib/
 │   │   └── api.ts               # API 클라이언트
 │   └── store/
-│       └── index.ts             # Zustand 스토어
+│       └── (empty)              # 상태는 React Query로 관리
 ```
 
 ### 3.3 주요 페이지 구성
