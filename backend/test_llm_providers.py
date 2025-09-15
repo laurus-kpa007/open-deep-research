@@ -4,6 +4,12 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from root .env file
+root_dir = Path(__file__).parent.parent
+env_path = root_dir / '.env'
+load_dotenv(env_path)
 
 # Add the backend src directory to the path
 sys.path.insert(0, str(Path(__file__).parent / "src"))

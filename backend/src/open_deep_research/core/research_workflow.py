@@ -12,7 +12,7 @@ from ..models.state import (
     LanguageCode, update_research_progress, DetailedProgress
 )
 from ..prompts.multilingual_prompts import MultilingualPrompts
-from ..core.ollama_client import OllamaClient
+from ..core.llm_providers import BaseLLMClient
 from ..services.search_service import SearchService
 from ..utils.language_detector import LanguageDetector
 
@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 class ResearchWorkflow:
     """LangGraph-based research workflow implementing the Open Deep Research pattern."""
     
-    def __init__(self, ollama_client: OllamaClient, search_service: SearchService):
-        self.ollama_client = ollama_client
+    def __init__(self, llm_client: BaseLLMClient, search_service: SearchService):
+        self.llm_client = llm_client
         self.search_service = search_service
         self.language_detector = LanguageDetector()
         self.progress_callback = None
@@ -92,7 +92,7 @@ class ResearchWorkflow:
             )
             
             # Generate clarification
-            response = await self.ollama_client.generate(
+            response = await self.llm_client.generate(
                 prompt, 
                 stage="clarification"
             )
@@ -142,7 +142,7 @@ class ResearchWorkflow:
                 clarified_research_goal=state["clarified_research_goal"]
             )
             
-            research_brief = await self.ollama_client.generate(
+            research_brief = await self.llm_client.generate(
                 prompt,
                 stage="brief"
             )
@@ -178,7 +178,7 @@ class ResearchWorkflow:
                     research_brief=state["research_brief"]
                 )
                 
-                response = await self.ollama_client.generate(
+                response = await self.llm_client.generate(
                     prompt,
                     stage="supervisor"
                 )
@@ -322,7 +322,7 @@ class ResearchWorkflow:
             # Conduct research with streaming
             research_result = ""
             chunk_count = 0
-            async for chunk in self.ollama_client.stream_generate(
+            async for chunk in self.llm_client.stream_generate(
                 prompt,
                 stage="research"
             ):
@@ -399,7 +399,7 @@ class ResearchWorkflow:
                 research_summaries=summaries_text
             )
             
-            compressed_research = await self.ollama_client.generate(
+            compressed_research = await self.llm_client.generate(
                 prompt,
                 stage="compression"
             )

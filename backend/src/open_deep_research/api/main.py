@@ -17,7 +17,8 @@ from ..models.state import (
     ResearchRequest, ResearchResponse, ResearchProgress,
     ResearchState, LanguageCode, create_research_state, DetailedProgress
 )
-from ..core.ollama_client import OllamaClient
+from ..core.llm_adapter import get_llm_client
+from ..core.llm_providers import BaseLLMClient
 from ..core.research_workflow import ResearchWorkflow
 from ..services.search_service import SearchService
 from ..services.session_manager import SessionManager
@@ -39,7 +40,7 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
 # Global instances
-ollama_client: OllamaClient = None
+llm_client: BaseLLMClient = None
 search_service: SearchService = None
 research_workflow: ResearchWorkflow = None
 session_manager: SessionManager = None
@@ -59,19 +60,21 @@ sio = socketio.AsyncServer(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
-    global ollama_client, search_service, research_workflow, session_manager
-    
+    global llm_client, search_service, research_workflow, session_manager
+
     logger.info("Initializing Deep Research Agent...")
-    
+
     # Initialize services
     try:
-        # Initialize Ollama client
-        ollama_client = OllamaClient()
-        logger.info("Ollama client initialized")
-        
-        # Check Ollama health
-        if not await ollama_client.health_check():
-            logger.warning("Ollama server not available, attempting to start...")
+        # Initialize LLM client based on provider configuration
+        provider = os.getenv("LLM_PROVIDER", "ollama")
+        logger.info(f"Initializing LLM client with provider: {provider}")
+        llm_client = get_llm_client(provider=provider)
+        logger.info(f"{provider.upper()} client initialized")
+
+        # Check LLM health
+        if not await llm_client.health_check():
+            logger.warning(f"{provider.upper()} server not available, attempting to continue...")
             # In production, you might want to wait or fail here
         
         # Initialize search service
@@ -82,7 +85,7 @@ async def lifespan(app: FastAPI):
             logger.warning("Search service not available")
         
         # Initialize research workflow
-        research_workflow = ResearchWorkflow(ollama_client, search_service)
+        research_workflow = ResearchWorkflow(llm_client, search_service)
         logger.info("Research workflow initialized")
         
         # Initialize session manager
@@ -220,8 +223,9 @@ async def health_check():
     }
     
     try:
-        if ollama_client:
-            health_status["ollama_available"] = await ollama_client.health_check()
+        if llm_client:
+            provider = os.getenv("LLM_PROVIDER", "ollama")
+            health_status[f"{provider}_available"] = await llm_client.health_check()
         
         if search_service:
             health_status["search_available"] = await search_service.health_check()

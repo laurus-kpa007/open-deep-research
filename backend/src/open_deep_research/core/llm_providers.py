@@ -236,7 +236,9 @@ class VLLMClient(BaseLLMClient):
         self.base_url = base_url or os.getenv("VLLM_BASE_URL", "http://localhost:8000")
         self.model = model or os.getenv("VLLM_MODEL", "meta-llama/Llama-3-8b")
         # Use provided API key, or get from env, or use "dummy" for local vLLM
-        self.api_key = api_key or os.getenv("VLLM_API_KEY", "dummy")
+        # If VLLM_API_KEY is empty string, use "dummy"
+        env_key = os.getenv("VLLM_API_KEY", "dummy")
+        self.api_key = api_key or (env_key if env_key else "dummy")
         self.timeout = timeout
 
         # Initialize different ChatOpenAI instances for different tasks
