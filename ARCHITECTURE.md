@@ -14,57 +14,65 @@
 Open Deep Research Agent는 LangGraph 기반의 AI 연구 에이전트로, 복잡한 연구 질문에 대해 단계별 분석과 종합을 수행합니다.
 
 ### 주요 특징
-- 🤖 **Ollama 통합**: 로컬 LLM을 활용한 프라이버시 보장
+- 🤖 **Ollama 통합**: 로컬 LLM을 활용한 프라이버시 보장 (Gemma 3:4B/12B)
 - 🔄 **LangGraph 워크플로우**: 체계적인 연구 프로세스 자동화
-- 🌐 **다국어 지원**: 영어, 한국어, 일본어, 중국어, 스페인어
-- ⚡ **실시간 진행상황**: WebSocket을 통한 실시간 업데이트
+- 🌐 **다국어 지원**: 한국어, 영어 자동 감지 및 응답
+- ⚡ **실시간 진행상황**: WebSocket/Socket.IO를 통한 세부 진행률 업데이트
+- 💾 **세션 지속성**: SQLite 기반 연구 세션 저장 및 재개
 - 🔍 **Tavily 검색**: 웹 검색을 통한 최신 정보 수집
+- 🔄 **원격 접속**: 네트워크 내 여러 디바이스에서 접속 가능
 
 ## 전체 아키텍처
 
 ```mermaid
 graph TB
     subgraph "Frontend Layer"
-        UI[Next.js UI<br/>React + TypeScript]
-        WS[WebSocket Client]
+        UI[Next.js 14 UI<br/>React + TypeScript]
+        WS[Socket.IO Client]
+        ZS[Zustand Store]
     end
-    
+
     subgraph "Backend Layer"
         API[FastAPI Server]
-        WSS[WebSocket Server]
         SIO[Socket.IO Server]
+        CORS[CORS Handler]
     end
-    
+
     subgraph "Core Engine"
         WF[Research Workflow<br/>LangGraph]
         OC[Ollama Client]
         SS[Search Service<br/>Tavily API]
+        SM[Session Manager]
     end
-    
+
     subgraph "External Services"
-        OL[Ollama Server<br/>Local LLM]
+        OL[Ollama Server<br/>Gemma 3:4B/12B]
         TA[Tavily API<br/>Web Search]
     end
-    
+
     subgraph "Data Layer"
         DB[(SQLite DB<br/>Sessions)]
+        SF[Session Files<br/>JSON Storage]
         CACHE[Cache<br/>Search Results]
     end
-    
+
     UI <--> API
-    WS <--> WSS
     UI <--> SIO
-    
+    UI <--> ZS
+
+    API --> CORS
     API --> WF
     WF --> OC
     WF --> SS
-    
+    WF --> SM
+
     OC --> OL
     SS --> TA
-    
-    API --> DB
+
+    SM --> DB
+    SM --> SF
     SS --> CACHE
-    
+
     style UI fill:#e1f5fe
     style API fill:#fff3e0
     style WF fill:#f3e5f5
@@ -80,24 +88,30 @@ graph TB
 graph LR
     subgraph "React Components"
         App[App.tsx]
-        RF[ResearchForm]
-        RP[ResearchProgress]
-        RR[ResearchResults]
-        HC[HealthCheck]
+        RF[ResearchForm.tsx]
+        DP[DetailedProgress.jsx]
+        RR[ResearchResults.tsx]
+        HC[HealthCheck.tsx]
+        RP[ResearchProgress.tsx]
     end
-    
+
     subgraph "Hooks & Utils"
-        URS[useResearchSession]
-        WSH[WebSocket Hook]
+        URS[useResearchSession.ts]
+        API[api.ts<br/>API Client]
     end
-    
+
     subgraph "State Management"
+        ZS[Zustand Store]
         RS[Research State]
         PS[Progress State]
+        SS[Session State]
     end
-    
+
     App --> RF
-    App --> RP
+    App --> DP
+    App --> RR
+    URS --> API
+    URS --> ZS
     App --> RR
     App --> HC
     

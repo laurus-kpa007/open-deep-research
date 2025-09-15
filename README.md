@@ -2,30 +2,34 @@
 
 🧠 **AI 기반 심층 연구 에이전트** / AI-Powered Deep Research Agent
 
-Ollama를 활용한 로컬 LLM 기반 웹 연구 도구로, 한국어와 영어를 지원합니다.  
-A web-based research tool powered by local LLM via Ollama, supporting Korean and English.
+Ollama를 활용한 로컬 LLM 기반 웹 연구 도구로, 한국어와 영어를 지원합니다. 실시간 진행 상황 추적과 세션 지속성을 제공합니다.
+A web-based research tool powered by local LLM via Ollama, supporting Korean and English with real-time progress tracking and session persistence.
 
 ## ✨ 주요 특징 / Key Features
 
 - 🤖 **로컬 LLM 통합** - Ollama와 Gemma 3 모델을 사용한 프라이버시 보장
 - 🌐 **다국어 지원** - 한국어/영어 자동 감지 및 응답
-- ⚡ **실시간 진행 상황** - WebSocket 기반 실시간 업데이트
+- ⚡ **실시간 진행 상황** - WebSocket 기반 실시간 업데이트 및 세부 진행률 표시
+- 💾 **세션 지속성** - 연구 세션 저장 및 재개 기능
 - 📊 **고품질 보고서** - 다중 소스 기반 구조화된 연구 보고서
+- 🔄 **원격 접속 지원** - 네트워크 내 여러 디바이스에서 접속 가능
 - 🐳 **Docker 지원** - 간편한 배포 및 관리
 
 ## 🏗️ 아키텍처 / Architecture
 
 ```
-Frontend (Next.js) ↔ Backend (FastAPI) ↔ Ollama (Gemma 3:12B)
-                            ↓
-                    SQLite Database
+Frontend (Next.js) ↔ Backend (FastAPI) ↔ Ollama (Gemma 3:4B)
+        ↓                    ↓
+    WebSocket           SQLite Database
+    (Real-time)         (Session Storage)
 ```
 
-- **Frontend**: Next.js 14, TypeScript, Tailwind CSS
-- **Backend**: FastAPI, LangGraph, Pydantic
-- **LLM**: Ollama with Gemma 3:12B
-- **Database**: SQLite (PostgreSQL ready)
+- **Frontend**: Next.js 14, TypeScript, Tailwind CSS, Zustand
+- **Backend**: FastAPI, LangGraph, Pydantic, Socket.IO
+- **LLM**: Ollama with Gemma 3:4B (customizable)
+- **Database**: SQLite with session persistence
 - **Search**: Tavily API
+- **Real-time**: WebSocket for live updates
 
 📊 **[시스템 구성도 보기 / View System Architecture](./ARCHITECTURE.md)**
 
@@ -74,7 +78,7 @@ curl -fsSL https://ollama.ai/install.sh | sh
 ollama serve
 
 # Gemma 3 모델 다운로드 / Download Gemma 3 model
-ollama pull gemma3:12b
+ollama pull gemma3:4b  # 또는 gemma3:12b for better quality
 ```
 
 #### 2. 백엔드 설정 / Backend Setup
@@ -113,14 +117,22 @@ npm run dev
 
 ```env
 # Ollama 설정
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=gemma3:12b
+OLLAMA_BASE_URL=http://localhost:11434  # 원격 접속 시 IP 주소로 변경
+OLLAMA_MODEL=gemma3:4b  # 또는 gemma3:12b
 
-# 검색 API (선택사항)
+# 검색 API (필수)
 TAVILY_API_KEY=your_tavily_api_key
 
 # 데이터베이스
-DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/research_db
+DATABASE_URL=sqlite:///./research_database.db
+
+# CORS 설정 (원격 접속 허용)
+CORS_ORIGINS=http://localhost:3000,http://192.168.0.3:3000
+FRONTEND_URL=http://localhost:3000
+
+# Next.js 설정
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_WS_URL=ws://localhost:8000
 ```
 
 ### Tavily API 키 설정 / Tavily API Key Setup
@@ -170,21 +182,26 @@ curl "http://localhost:8000/api/v1/research/{session_id}/report"
 open_deep_research/
 ├── backend/                 # FastAPI 백엔드
 │   ├── src/open_deep_research/
-│   │   ├── api/            # API 엔드포인트
-│   │   ├── core/           # 핵심 로직
+│   │   ├── api/            # API 엔드포인트 (WebSocket 포함)
+│   │   ├── core/           # 핵심 로직 (LangGraph workflows)
 │   │   ├── models/         # 데이터 모델
 │   │   ├── services/       # 서비스 레이어
 │   │   ├── prompts/        # 프롬프트 템플릿
 │   │   └── utils/          # 유틸리티
+│   ├── sessions/           # 세션 데이터 저장
+│   ├── cors_config.py      # CORS 설정
 │   ├── tests/              # 테스트
 │   └── pyproject.toml      # 의존성 관리
 ├── frontend/               # Next.js 프론트엔드
 │   ├── src/
 │   │   ├── app/           # Next.js App Router
-│   │   ├── components/    # React 컴포넌트
-│   │   ├── hooks/         # React 훅
-│   │   └── lib/           # 라이브러리
+│   │   ├── components/    # React 컴포넌트 (DetailedProgress, ResearchForm 등)
+│   │   ├── hooks/         # React 훅 (useResearchSession)
+│   │   ├── lib/           # API 클라이언트 (api.ts)
+│   │   └── store/         # Zustand 상태 관리
 │   └── package.json       # 의존성 관리
+├── .env                   # 환경 변수 설정
+├── .env.example           # 환경 변수 예제
 └── docker-compose.yml     # Docker 구성
 ```
 
@@ -222,15 +239,23 @@ npm run type-check
    - Ollama 서비스가 실행 중인지 확인: `ollama list`
    - 모델이 설치되어 있는지 확인: `ollama list`
    - 포트 충돌 확인: `netstat -tulpn | grep 11434`
+   - 원격 접속 시 IP 주소 확인: `OLLAMA_BASE_URL` 환경 변수
 
 2. **검색 기능 제한**
    - Tavily API 키가 설정되었는지 확인
    - API 키의 유효성 확인
+   - 무료 계정의 경우 일일 한도 확인
 
 3. **WebSocket 연결 오류**
-   - CORS 설정 확인
-   - 방화벽 설정 확인
+   - CORS 설정 확인 (CORS_ORIGINS 환경 변수)
+   - 방화벽 설정 확인 (포트 8000, 3000)
    - 브라우저 콘솔에서 오류 메시지 확인
+   - Socket.IO 버전 호환성 확인
+
+4. **원격 접속 문제**
+   - IP 주소가 모든 환경 변수에 올바르게 설정되었는지 확인
+   - Windows 방화벽에서 포트 허용
+   - 네트워크 연결 상태 확인
 
 ### 로그 확인 / Log Checking
 
@@ -258,14 +283,23 @@ LOG_LEVEL=DEBUG poetry run uvicorn src.open_deep_research.api.main:socket_app --
    ```bash
    # GPU 사용 (NVIDIA CUDA)
    CUDA_VISIBLE_DEVICES=0 ollama serve
-   
-   # 메모리 제한
+
+   # 메모리 제한 및 원격 접속 허용
    OLLAMA_HOST=0.0.0.0:11434 OLLAMA_MAX_LOADED_MODELS=1 ollama serve
+
+   # 모델 선택 최적화
+   # - gemma3:4b: 빠른 응답, 적은 메모리 (권장)
+   # - gemma3:12b: 높은 품질, 더 많은 메모리
    ```
 
 2. **동시 연구원 수 조절**
    - 시스템 리소스에 따라 1-5명 조절
    - CPU 코어 수에 따라 최적화
+   - gemma3:4b 사용 시 더 많은 병렬 처리 가능
+
+3. **세션 관리 최적화**
+   - 오래된 세션 자동 정리
+   - SQLite WAL 모드 활성화로 동시성 향상
 
 ## 📝 라이센스 / License
 
