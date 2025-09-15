@@ -72,8 +72,12 @@ export interface ResearchReport {
 
 export interface HealthStatus {
   status: string;
-  ollama_available: boolean;
+  llm_provider: string;
+  llm_available: boolean;
+  ollama_available: boolean;  // For backward compatibility
+  vllm_available?: boolean;
   search_available: boolean;
+  vllm_model?: string;
 }
 
 // API methods

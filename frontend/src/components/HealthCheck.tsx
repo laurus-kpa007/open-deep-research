@@ -45,8 +45,10 @@ export default function HealthCheck() {
   }
 
   const isHealthy = healthData?.status === 'healthy';
-  const ollamaAvailable = healthData?.ollama_available;
+  const llmProvider = healthData?.llm_provider || 'ollama';
+  const llmAvailable = healthData?.llm_available || healthData?.ollama_available;
   const searchAvailable = healthData?.search_available;
+  const providerName = llmProvider.toUpperCase();
 
   return (
     <div className={`card ${isHealthy ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'}`}>
@@ -59,9 +61,9 @@ export default function HealthCheck() {
             </h3>
             <div className="mt-2 space-y-1 text-sm">
               <div className="flex items-center space-x-2">
-                <span className={`w-2 h-2 rounded-full ${ollamaAvailable ? 'bg-green-400' : 'bg-red-400'}`}></span>
-                <span className={ollamaAvailable ? 'text-green-700' : 'text-red-700'}>
-                  Ollama LLM: {ollamaAvailable ? '연결됨 / Connected' : '연결 안됨 / Disconnected'}
+                <span className={`w-2 h-2 rounded-full ${llmAvailable ? 'bg-green-400' : 'bg-red-400'}`}></span>
+                <span className={llmAvailable ? 'text-green-700' : 'text-red-700'}>
+                  {providerName} LLM: {llmAvailable ? '연결됨 / Connected' : '연결 안됨 / Disconnected'}
                 </span>
               </div>
               <div className="flex items-center space-x-2">
@@ -79,18 +81,43 @@ export default function HealthCheck() {
         </div>
       </div>
 
-      {!ollamaAvailable && (
+      {!llmAvailable && (
         <div className="mt-4 p-3 bg-amber-100 border border-amber-200 rounded-lg">
           <p className="text-sm text-amber-800">
-            <strong>⚠️ Ollama 연결 안됨 / Ollama Not Connected:</strong><br />
-            Ollama 서버를 시작하고 gemma2:12b 모델이 설치되어 있는지 확인하세요.
-            <br />
-            Please start Ollama server and ensure gemma2:12b model is installed.
+            <strong>⚠️ {providerName} 연결 안됨 / {providerName} Not Connected:</strong><br />
+            {llmProvider === 'ollama' ? (
+              <>
+                Ollama 서버를 시작하고 모델이 설치되어 있는지 확인하세요.
+                <br />
+                Please start Ollama server and ensure the model is installed.
+              </>
+            ) : llmProvider === 'vllm' ? (
+              <>
+                vLLM 서버가 실행 중인지 확인하세요.
+                <br />
+                Please check if vLLM server is running.
+              </>
+            ) : (
+              <>
+                LLM 서버 연결을 확인하세요.
+                <br />
+                Please check LLM server connection.
+              </>
+            )}
           </p>
-          <div className="mt-2 text-xs text-amber-700 font-mono">
-            <div>$ ollama serve</div>
-            <div>$ ollama pull gemma2:12b</div>
-          </div>
+          {llmProvider === 'ollama' && (
+            <div className="mt-2 text-xs text-amber-700 font-mono">
+              <div>$ ollama serve</div>
+              <div>$ ollama pull gemma3:4b</div>
+            </div>
+          )}
+          {llmProvider === 'vllm' && (
+            <div className="mt-2 text-xs text-amber-700 font-mono">
+              <div>$ python -m vllm.entrypoints.openai.api_server \</div>
+              <div>    --model {healthData?.vllm_model || 'your-model'} \</div>
+              <div>    --port 2345</div>
+            </div>
+          )}
         </div>
       )}
 

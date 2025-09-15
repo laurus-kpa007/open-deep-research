@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { ChevronDownIcon } from '@heroicons/react/20/solid';
+import { useQuery } from '@tanstack/react-query';
+import { researchApi } from '@/lib/api';
 
 interface ResearchFormProps {
   onSubmit: (query: string, options: any) => void;
@@ -15,6 +17,13 @@ export default function ResearchForm({ onSubmit, isLoading, disabled }: Research
   const [depth, setDepth] = useState<'shallow' | 'medium' | 'deep'>('deep');
   const [maxResearchers, setMaxResearchers] = useState(5);
   const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Get LLM provider info
+  const { data: healthData } = useQuery({
+    queryKey: ['health'],
+    queryFn: researchApi.healthCheck,
+    refetchInterval: 30000,
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,6 +62,14 @@ export default function ResearchForm({ onSubmit, isLoading, disabled }: Research
           <br />
           Enter the topic you want to research
         </p>
+        {healthData?.llm_provider && (
+          <div className="mt-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+            LLM: {healthData.llm_provider.toUpperCase()}
+            {healthData.llm_available && (
+              <span className="ml-1 w-2 h-2 bg-green-400 rounded-full"></span>
+            )}
+          </div>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">

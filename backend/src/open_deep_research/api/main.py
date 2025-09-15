@@ -216,17 +216,25 @@ async def progress_callback(session_id: str, stage: str, progress: int, data: Di
 @app.get("/api/v1/health")
 async def health_check():
     """Health check endpoint."""
+    provider = os.getenv("LLM_PROVIDER", "ollama")
     health_status = {
         "status": "healthy",
-        "ollama_available": False,
-        "search_available": False
+        "llm_provider": provider,
+        "llm_available": False,
+        "search_available": False,
+        # Keep backward compatibility
+        "ollama_available": False
     }
-    
+
     try:
         if llm_client:
-            provider = os.getenv("LLM_PROVIDER", "ollama")
-            health_status[f"{provider}_available"] = await llm_client.health_check()
-        
+            llm_available = await llm_client.health_check()
+            health_status["llm_available"] = llm_available
+            health_status[f"{provider}_available"] = llm_available
+            # For backward compatibility
+            if provider == "ollama":
+                health_status["ollama_available"] = llm_available
+
         if search_service:
             health_status["search_available"] = await search_service.health_check()
             
